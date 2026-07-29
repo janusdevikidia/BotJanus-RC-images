@@ -11,8 +11,8 @@ Logique d'analyse (par fichier) :
   1. Templates réellement transclus sur la page (résolus par MediaWiki, alias compris)
      comparés à la liste des modèles listés récursivement dans Catégorie:Modèle licence.
   2. Licence reconnue trouvée => rien à faire.
-  3. Aucune licence reconnue => on ajoute {{LI}} en haut de la page, et on ajoute une
-     section "== Licence manquante ==" avec {{subst:Image oubli}} sur la page de
+  3. Aucune licence reconnue => on ajoute {{LI}} en haut de la page, et 
+     on ajoute une section "== Licence manquante ==" avec {{subst:Image oubli|nom_du_fichier}} sur la page de
      discussion du téléverseur.
 
 Toutes les actions sont idempotentes (vérification avant écriture), donc un même
@@ -20,6 +20,7 @@ Toutes les actions sont idempotentes (vérification avant écriture), donc un m�
 ne produit pas de doublon.
 """
 
+import logging
 import sys
 import time
 import pywikibot
@@ -40,12 +41,11 @@ UNKNOWN_LICENSE_TEMPLATES = {"Licence inconnue", "LI"}    # marqueurs "pas de li
 LI_TEMPLATE_TEXT = "{{LI}}\n"
 
 TALK_SECTION_TITLE = "Licence manquante"
-TALK_MESSAGE = "{{subst:Image oubli}} ~~~~"
+TALK_MESSAGE = "{{subst:Image oubli|%s}} ~~~~"
 
 EDIT_SUMMARY_FILE = "Bot : pose de {{LI}} — aucune licence reconnue détectée sur ce fichier"
 EDIT_SUMMARY_TALK = "Bot : notification — licence manquante sur un fichier téléversé"
 
-import logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -64,6 +64,7 @@ def get_known_license_templates(site):
     category = pywikibot.Category(site, LICENSE_MODELS_CATEGORY)
     members = category.members(namespaces=[10], recurse=True)  # 10 = Modèle/Template
     known = {page.title(with_ns=False) for page in members}
+
     return known - UNKNOWN_LICENSE_TEMPLATES
 
 
@@ -117,8 +118,12 @@ def notify_uploader(site, page, dry_run):
         log.info("  -> section '%s' déjà présente chez %s, on ignore.", TALK_SECTION_TITLE, uploader_name)
         return
 
+    # Récupération du titre sans le préfixe d'espace de noms (ex: "Image.jpg")
+    file_title_without_ns = page.title(with_ns=False)
+    formatted_talk_message = TALK_MESSAGE % file_title_without_ns
+
     separator = "\n\n" if talk_text.strip() else ""
-    new_talk_text = "%s%s%s\n%s\n" % (talk_text, separator, section_header, TALK_MESSAGE)
+    new_talk_text = "%s%s%s\n%s\n" % (talk_text, separator, section_header, formatted_talk_message)
 
     if dry_run:
         log.info("  -> [DRY-RUN] aurait ajouté la section '%s' chez %s", TALK_SECTION_TITLE, uploader_name)
