@@ -30,7 +30,7 @@ import pywikibot
 # ==========================================================================
 
 DRY_RUN = False               # True = simulation, aucune écriture sur le wiki
-POLL_INTERVAL = 180            # secondes entre deux sondages du journal des téléversements
+POLL_INTERVAL = 600            # secondes entre deux sondages du journal des téléversements
 PROCESS_BACKLOG = False       # False = ne traite que les téléversements à partir du démarrage
                                # True = traite aussi les téléversements déjà existants (attention,
                                # peut représenter énormément de pages au premier lancement)

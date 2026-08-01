@@ -46,7 +46,7 @@ FAMILY = "vikidia"          # nécessite une family file "vikidia" pour pywikibo
 FILE_NAMESPACE = 6          # "Fichier" sur Vikidia FR
 ARTICLE_NAMESPACES = [0]    # namespace des articles (0 = principal)
 
-POLL_INTERVAL = 180          # secondes entre chaque vérification des RC
+POLL_INTERVAL = 600          # secondes entre chaque vérification des RC
 DRY_RUN = False              # True = simulation, ne sauvegarde rien
 EDIT_SUMMARY = "Bot : suppression du lien vers une image supprimée"
 SLEEP_BETWEEN_EDITS = 2     # secondes, pour ne pas spammer l'API
