@@ -113,25 +113,30 @@ def notify_uploader(site, page, dry_run):
         log.warning("  Erreur de lecture de la page de discussion de %s : %s", uploader_name, e)
         return
 
-    section_header = "== %s ==" % TALK_SECTION_TITLE
-    if section_header in talk_text:
-        log.info("  -> section '%s' déjà présente chez %s, on ignore.", TALK_SECTION_TITLE, uploader_name)
+    # Récupération du titre du fichier
+    file_title_without_ns = page.title(with_ns=False)
+    
+    # Si le fichier a déjà été notifié sur cette page, on ne fait rien
+    if file_title_without_ns in talk_text:
+        log.info("  -> notification pour %s déjà présente chez %s, on ignore.", file_title_without_ns, uploader_name)
         return
 
-    # Récupération du titre sans le préfixe d'espace de noms (ex: "Image.jpg")
-    file_title_without_ns = page.title(with_ns=False)
+    section_header = "== %s ==" % TALK_SECTION_TITLE
     formatted_talk_message = TALK_MESSAGE % file_title_without_ns
 
+    # Construction du bloc à ajouter en fin de page
+    new_block = "%s\n%s" % (section_header, formatted_talk_message)
+
     separator = "\n\n" if talk_text.strip() else ""
-    new_talk_text = "%s%s%s\n%s\n" % (talk_text, separator, section_header, formatted_talk_message)
+    new_talk_text = "%s%s%s\n" % (talk_text.strip(), separator, new_block)
 
     if dry_run:
-        log.info("  -> [DRY-RUN] aurait ajouté la section '%s' chez %s", TALK_SECTION_TITLE, uploader_name)
+        log.info("  -> [DRY-RUN] aurait ajouté l'avertissement pour %s chez %s", file_title_without_ns, uploader_name)
         return
 
     talk_page.text = new_talk_text
     talk_page.save(summary=EDIT_SUMMARY_TALK, minor=False, bot=False)
-    log.info("  -> section '%s' ajoutée sur la page de discussion de %s", TALK_SECTION_TITLE, uploader_name)
+    log.info("  -> avertissement pour %s ajouté chez %s", file_title_without_ns, uploader_name)
 
 
 def process_file(site, page, known_license_templates, dry_run):
