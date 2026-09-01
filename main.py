@@ -22,8 +22,12 @@ import time
 import logging
 import threading
 
+import pywikibot
 import license_bot
 import image_cleanup_bot
+
+# Initialisation du site par défaut pour la session Pywikibot globale
+site = pywikibot.Site("fr", "vikidia")
 
 logging.basicConfig(
     level=logging.INFO,
