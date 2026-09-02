@@ -216,6 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+user-config.py
+user-password.py
+throttle.ctrl
 
 user-config.py
 user-password.py
