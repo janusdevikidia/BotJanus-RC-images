@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Launcher — lance BotJanus (license_bot.py) et le bot de nettoyage d'images
-supprimées (image_cleanup_bot.py) en parallèle, dans le même processus.
-
-Aucune logique des deux bots n'est modifiée : chacun garde sa propre
-boucle de sondage (POLL_INTERVAL, DRY_RUN, fichiers d'état, etc.),
-son propre logger, et son propre appel à pywikibot.Site()/login().
-
-pywikibot met en cache les objets Site par (famille, langue), donc les
-deux bots partagent en réalité la même session/throttle vers l'API —
-pas de double authentification ni de double débit involontaire.
+Launcher — lance BotJanus (license_bot.py), le bot de nettoyage d'images
+supprimées (image_cleanup_bot.py) et le détecteur d'images IA (ai_detector.py)
+en parallèle dans des threads distincts.
 
 Usage :
-    python launcher.py
-    (Ctrl+C pour arrêter les deux)
+    python main.py
+    (Ctrl+C pour arrêter l'ensemble)
 """
 
 import sys
@@ -25,8 +18,9 @@ import threading
 import pywikibot
 import license_bot
 import image_cleanup_bot
+import ai_detector
 
-# Initialisation du site par défaut pour la session Pywikibot globale
+# Initialisation de la session Pywikibot globale
 site = pywikibot.Site("fr", "vikidia")
 
 logging.basicConfig(
@@ -38,8 +32,8 @@ log = logging.getLogger("launcher")
 
 
 def run_bot(name, entry_point):
-    """Encapsule main() de chaque bot pour logger proprement les crashs
-    sans faire tomber l'autre bot ni le launcher."""
+    """Encapsule main() de chaque bot pour logger proprement les erreurs sans
+    arrêter les autres threads."""
     log.info("Démarrage du thread : %s", name)
     try:
         entry_point()
@@ -61,19 +55,25 @@ def main():
             name="image_cleanup_bot",
             daemon=True,
         ),
+        threading.Thread(
+            target=run_bot,
+            args=("ai_detector", ai_detector.main),
+            name="ai_detector",
+            daemon=True,
+        ),
     ]
 
     for t in threads:
         t.start()
-        time.sleep(2)  # léger décalage pour éviter deux logins simultanés
+        time.sleep(2)  # Décalage pour éviter des requêtes simultanées lors du login
 
-    log.info("Les deux bots tournent. Ctrl+C pour arrêter.")
+    log.info("Les 3 bots tournent en parallèle. Appuie sur Ctrl+C pour tout arrêter.")
 
     try:
         while True:
             time.sleep(3600)
     except KeyboardInterrupt:
-        log.info("Arrêt demandé (Ctrl+C). Les threads sont daemon, le processus va se terminer.")
+        log.info("Arrêt demandé (Ctrl+C). Fin du launcher.")
         sys.exit(0)
 
 

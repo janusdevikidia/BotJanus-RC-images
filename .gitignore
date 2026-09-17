@@ -218,6 +218,9 @@ __marimo__/
 .streamlit/secrets.toml
 user-config.py
 user-password.py
+.env
+/throttle.ctrl
+/apicache
 throttle.ctrl
 
 user-config.py
