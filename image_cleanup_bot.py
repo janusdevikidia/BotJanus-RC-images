@@ -189,7 +189,7 @@ def process_deleted_file(site: pywikibot.site.APISite, file_title: str):
         else:
             try:
                 page.text = new_text
-                page.save(summary=EDIT_SUMMARY, minor=False, botflag=True)
+                page.save(summary=EDIT_SUMMARY, minor=False, bot=True)
                 log.info("✓ Page sauvegardée : %s", page.title())
             except Exception as e:
                 log.error("✗ Échec de la sauvegarde de %s : %s", page.title(), e)

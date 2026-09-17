@@ -122,7 +122,7 @@ def process_file_page(site: pywikibot.Site, page_title: str, dry_run: bool = Fal
                 log.info("[DRY-RUN] Mode simulation : {{image IA}} aurait été ajouté sur %s", page_title)
             else:
                 file_page.text = new_text
-                file_page.save(summary=EDIT_SUMMARY, minor=False, botflag=True)
+                file_page.save(summary=EDIT_SUMMARY, minor=False, bot=True)
                 log.info("✓ Bandeau {{image IA}} ajouté sur %s.", page_title)
         else:
             log.info("Score (%.2f %%) sous le seuil de %.2f %%, aucune action.", score, CONFIDENCE_THRESHOLD)
