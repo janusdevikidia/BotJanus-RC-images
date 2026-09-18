@@ -48,11 +48,55 @@ TAG_TEMPLATE = "{{image IA}}\n"
 EDIT_SUMMARY = "Bot : ajout de {{image IA}} (détection automatique Winston AI > 95 %)"
 POLL_INTERVAL = 600  # Intervalle de sondage en secondes (10 min)
 
+# ---------------------------------------------------------------------------
+# WEBHOOK DISCORD (logs dédiés à ce script uniquement)
+# ---------------------------------------------------------------------------
+
+AI_DETECTOR_WEBHOOK_URL = os.getenv("AI_DETECTOR_WEBHOOK_URL", "").strip()
+EMBED_COLOR_AI_DETECTED = 0xE74C3C   # rouge
+EMBED_COLOR_CLEAN = 0x2ECC71         # vert
+EMBED_COLOR_SKIP = 0x95A5A6          # gris
+EMBED_COLOR_ERROR = 0xF1C40F         # jaune
+EMBED_COLOR_DRYRUN = 0x3498DB        # bleu
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 log = logging.getLogger("winston-ai-detector")
+
+
+def send_discord_embed(title: str, description: str, color: int, fields=None, thumbnail_url: str = None):
+    """
+    Envoie un embed Discord via webhook. N'échoue jamais bruyamment :
+    si le webhook n'est pas configuré ou si l'envoi échoue, on logue et on continue.
+    """
+    if not AI_DETECTOR_WEBHOOK_URL:
+        return
+
+    embed = {
+        "title": title,
+        "description": description,
+        "color": color,
+        "timestamp": pywikibot.Timestamp.now().isoformat(),
+        "footer": {"text": "ai_detector · Winston AI"},
+    }
+    if fields:
+        embed["fields"] = [
+            {"name": name, "value": str(value), "inline": inline}
+            for name, value, inline in fields
+        ]
+    if thumbnail_url:
+        embed["thumbnail"] = {"url": thumbnail_url}
+
+    payload = {"embeds": [embed]}
+
+    try:
+        resp = requests.post(AI_DETECTOR_WEBHOOK_URL, json=payload, timeout=10)
+        if resp.status_code >= 300:
+            log.warning("Webhook Discord : réponse inattendue (%s) : %s", resp.status_code, resp.text[:200])
+    except requests.exceptions.RequestException as e:
+        log.warning("Webhook Discord : envoi impossible : %s", e)
 
 
 def check_image_with_winston(image_url: str) -> float:
@@ -106,6 +150,12 @@ def process_file_page(site: pywikibot.Site, page_title: str, dry_run: bool = Fal
         # Évite de retraiter si le modèle est déjà présent
         if "{{image IA}}" in text or "{{Image IA}}" in text:
             log.info("%s contient déjà {{image IA}}, passage.", page_title)
+            send_discord_embed(
+                title="⏭️ Déjà taggé",
+                description=f"**{page_title}** contient déjà `{{{{image IA}}}}`.",
+                color=EMBED_COLOR_SKIP,
+                fields=[("Page", page_title, False)],
+            )
             return
 
         image_url = file_page.get_file_url()
@@ -114,21 +164,58 @@ def process_file_page(site: pywikibot.Site, page_title: str, dry_run: bool = Fal
         score = check_image_with_winston(image_url)
         log.info("Score IA calculé pour %s : %.2f %%", page_title, score)
 
+        page_url = file_page.full_url()
+
         if score >= CONFIDENCE_THRESHOLD:
             log.warning("Image détectée IA avec une certitude de %.2f %% !", score)
             new_text = TAG_TEMPLATE + text
 
             if dry_run:
                 log.info("[DRY-RUN] Mode simulation : {{image IA}} aurait été ajouté sur %s", page_title)
+                send_discord_embed(
+                    title="🧪 [DRY-RUN] Image IA détectée",
+                    description=f"[**{page_title}**]({page_url})\nAurait reçu le bandeau `{{{{image IA}}}}`.",
+                    color=EMBED_COLOR_DRYRUN,
+                    fields=[
+                        ("Score IA", f"{score:.2f} %", True),
+                        ("Seuil", f"{CONFIDENCE_THRESHOLD:.2f} %", True),
+                    ],
+                    thumbnail_url=image_url,
+                )
             else:
                 file_page.text = new_text
                 file_page.save(summary=EDIT_SUMMARY, minor=False, bot=True)
                 log.info("✓ Bandeau {{image IA}} ajouté sur %s.", page_title)
+                send_discord_embed(
+                    title="🚨 Image IA détectée et taggée",
+                    description=f"[**{page_title}**]({page_url})\nBandeau `{{{{image IA}}}}` ajouté.",
+                    color=EMBED_COLOR_AI_DETECTED,
+                    fields=[
+                        ("Score IA", f"{score:.2f} %", True),
+                        ("Seuil", f"{CONFIDENCE_THRESHOLD:.2f} %", True),
+                    ],
+                    thumbnail_url=image_url,
+                )
         else:
             log.info("Score (%.2f %%) sous le seuil de %.2f %%, aucune action.", score, CONFIDENCE_THRESHOLD)
+            send_discord_embed(
+                title="✅ Image jugée saine",
+                description=f"[**{page_title}**]({page_url})",
+                color=EMBED_COLOR_CLEAN,
+                fields=[
+                    ("Score IA", f"{score:.2f} %", True),
+                    ("Seuil", f"{CONFIDENCE_THRESHOLD:.2f} %", True),
+                ],
+                thumbnail_url=image_url,
+            )
 
     except Exception as e:
         log.error("Erreur lors du traitement de %s : %s", page_title, e)
+        send_discord_embed(
+            title="⚠️ Erreur lors de l'analyse",
+            description=f"**{page_title}**\n```{str(e)[:500]}```",
+            color=EMBED_COLOR_ERROR,
+        )
 
 
 def watch_uploads_for_ai(site: pywikibot.Site, dry_run: bool = False):
@@ -184,6 +271,11 @@ def main():
         log.info("Clé API Winston AI chargée : %s", masked_key)
     else:
         log.error("ATTENTION : Aucune clé WINSTON_API_KEY trouvée dans le fichier .env !")
+        send_discord_embed(
+            title="⚠️ Clé Winston AI manquante",
+            description="`WINSTON_API_KEY` est absente ou vide dans `.env` — le bot ne pourra pas analyser d'images.",
+            color=EMBED_COLOR_ERROR,
+        )
 
     if target_file:
         log.info("=== Mode test ponctuel sur : %s ===", target_file)
