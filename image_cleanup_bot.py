@@ -37,6 +37,8 @@ from datetime import datetime, timedelta, timezone
 import pywikibot
 from pywikibot import pagegenerators
 
+import bot_state
+
 # ---------------------------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------------------------
@@ -50,7 +52,6 @@ POLL_INTERVAL = 600          # secondes entre chaque vérification des RC
 DRY_RUN = False              # True = simulation, ne sauvegarde rien
 EDIT_SUMMARY = "Bot : suppression du lien vers une image supprimée"
 SLEEP_BETWEEN_EDITS = 2     # secondes, pour ne pas spammer l'API
-STATE_FILE = "last_check.txt"  # persiste le dernier timestamp vérifié entre les redémarrages
 
 logging.basicConfig(
     level=logging.INFO,
@@ -201,21 +202,6 @@ def process_deleted_file(site: pywikibot.site.APISite, file_title: str):
 # BOUCLE PRINCIPALE
 # ---------------------------------------------------------------------------
 
-def load_last_check() -> datetime:
-    """Charge le dernier timestamp vérifié depuis le disque, ou 'maintenant' si absent (premier lancement)."""
-    try:
-        with open(STATE_FILE, "r") as f:
-            ts = f.read().strip()
-            return datetime.fromisoformat(ts)
-    except (FileNotFoundError, ValueError):
-        return datetime.now(timezone.utc)
-
-
-def save_last_check(ts: datetime):
-    with open(STATE_FILE, "w") as f:
-        f.write(ts.isoformat())
-
-
 def main():
     site = pywikibot.Site(LANG, FAMILY)
     site.login()
@@ -223,8 +209,17 @@ def main():
     log.info("Bot démarré sur %s (DRY_RUN=%s)", site, DRY_RUN)
 
     already_processed = set()
-    last_check = load_last_check()
-    log.info("Surveillance des suppressions à partir de : %s", last_check.isoformat())
+    shared_last_check = bot_state.load_last_check()
+
+    if shared_last_check is not None:
+        last_check = shared_last_check
+        log.info("Reprise depuis le dernier passage partagé (%s) : rattrapage des"
+                  " suppressions survenues pendant l'arrêt, puis retour au direct.",
+                  last_check.isoformat())
+    else:
+        last_check = datetime.now(timezone.utc)
+        log.info("Aucun état partagé (premier lancement). Surveillance des"
+                  " suppressions à partir de maintenant : %s", last_check.isoformat())
 
     while True:
         try:
@@ -242,7 +237,7 @@ def main():
                 already_processed.clear()
 
             last_check = now - timedelta(minutes=1)  # petite marge de sécurité
-            save_last_check(last_check)
+            bot_state.update_last_check(last_check)
         except KeyboardInterrupt:
             log.info("Arrêt demandé par l'utilisateur.")
             sys.exit(0)

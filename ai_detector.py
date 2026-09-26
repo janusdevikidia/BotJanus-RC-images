@@ -20,6 +20,8 @@ import time
 import requests
 import pywikibot
 
+import bot_state
+
 # ---------------------------------------------------------------------------
 # CHARGEMENT AUTOMATIQUE DU FICHIER .env
 # ---------------------------------------------------------------------------
@@ -223,8 +225,20 @@ def watch_uploads_for_ai(site: pywikibot.Site, dry_run: bool = False):
     Sonde périodiquement le journal des téléversements pour analyser automatiquement
     chaque nouvelle image ajoutée sur le wiki.
     """
-    last_timestamp = pywikibot.Timestamp.now()
-    last_logid = None
+    shared_last_check = bot_state.load_last_check()
+
+    if shared_last_check is not None:
+        last_timestamp = shared_last_check
+        last_logid = None
+        log.info("Reprise depuis le dernier passage partagé (%s UTC) : rattrapage des"
+                  " téléversements manqués pendant l'arrêt, puis retour au direct.",
+                  last_timestamp.isoformat())
+    else:
+        last_timestamp = pywikibot.Timestamp.now()
+        last_logid = None
+        log.info("Aucun état partagé (premier lancement). Surveillance à partir de"
+                  " maintenant (%s UTC).", last_timestamp.isoformat())
+
     log.info("Surveillance continue des téléversements démarrée pour la détection d'images IA.")
 
     while True:
@@ -251,6 +265,10 @@ def watch_uploads_for_ai(site: pywikibot.Site, dry_run: bool = False):
 
         except Exception as e:
             log.error("Erreur dans la boucle de surveillance IA : %s", e)
+
+        # Fin du cycle de sondage : on met à jour l'heure de dernier passage
+        # partagée avec les 2 autres bots.
+        bot_state.update_last_check(pywikibot.Timestamp.now())
 
         time.sleep(POLL_INTERVAL)
 

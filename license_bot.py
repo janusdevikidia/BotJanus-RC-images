@@ -25,6 +25,8 @@ import sys
 import time
 import pywikibot
 
+import bot_state
+
 # ==========================================================================
 # CONFIGURATION
 # ==========================================================================
@@ -33,7 +35,8 @@ DRY_RUN = False               # True = simulation, aucune écriture sur le wiki
 POLL_INTERVAL = 600            # secondes entre deux sondages du journal des téléversements
 PROCESS_BACKLOG = False       # False = ne traite que les téléversements à partir du démarrage
                                # True = traite aussi les téléversements déjà existants (attention,
-                               # peut représenter énormément de pages au premier lancement)
+                               # peut représenter énormément de pages au premier lancement),
+                               # ignoré si un état partagé (bot_state.txt) existe déjà
 
 LICENSE_MODELS_CATEGORY = "Modèle licence"               # Catégorie:Modèle licence
 UNKNOWN_LICENSE_TEMPLATES = {"Licence inconnue", "LI"}    # marqueurs "pas de licence", exclus
@@ -171,15 +174,28 @@ def fetch_new_uploads(site, since_timestamp):
 
 
 def watch_uploads(site, known_license_templates, dry_run):
-    if PROCESS_BACKLOG:
+    shared_last_check = bot_state.load_last_check()
+
+    if shared_last_check is not None:
+        # Le bot (ou un des 2 autres) a déjà tourné : on rattrape tout ce qui
+        # s'est passé pendant la coupure, en repartant de la dernière heure
+        # de passage partagée entre les 3 bots.
+        last_timestamp = shared_last_check
+        last_logid = None
+        log.info("Reprise depuis le dernier passage partagé (%s UTC) : rattrapage des"
+                  " téléversements manqués pendant l'arrêt, puis retour au direct.",
+                  last_timestamp.isoformat())
+    elif PROCESS_BACKLOG:
         # None = pas de borne de début -> tout l'historique des téléversements existants
         last_timestamp = None
         last_logid = None
-        log.info("PROCESS_BACKLOG=True : traitement de tout l'historique des téléversements.")
+        log.info("Aucun état partagé (premier lancement). PROCESS_BACKLOG=True :"
+                  " traitement de tout l'historique.")
     else:
         last_timestamp = pywikibot.Timestamp.now()
         last_logid = None
-        log.info("Surveillance à partir de maintenant (%s UTC), backlog ignoré.", last_timestamp.isoformat())
+        log.info("Aucun état partagé (premier lancement). Surveillance à partir de"
+                  " maintenant (%s UTC).", last_timestamp.isoformat())
 
     log.info("Bot démarré, sondage toutes les %d secondes.", POLL_INTERVAL)
 
@@ -217,6 +233,10 @@ def watch_uploads(site, known_license_templates, dry_run):
 
             last_timestamp = ts
             last_logid = logid
+
+        # Fin du cycle de sondage : on met à jour l'heure de dernier passage
+        # partagée avec les 2 autres bots.
+        bot_state.update_last_check(pywikibot.Timestamp.now())
 
         time.sleep(POLL_INTERVAL)
 
