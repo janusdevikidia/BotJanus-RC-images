@@ -101,14 +101,26 @@ def send_discord_embed(title: str, description: str, color: int, fields=None, th
         log.warning("Webhook Discord : envoi impossible : %s", e)
 
 
-def check_image_with_winston(image_url: str) -> float:
+def check_image_with_winston(image_url: str, page_title: str = "?"):
     """
     Interroge l'API Winston AI et retourne le score d'IA en pourcentage (0.0 à 100.0).
     L'API retourne un 'score' qui est le score d'humanité (0 = IA, 100 = Humain).
+
+    Renvoie None en cas d'erreur (clé manquante, API injoignable, réponse invalide,
+    etc.) — à ne JAMAIS confondre avec un vrai score de 0.0 (= image jugée 100% IA).
+    Chaque erreur est notifiée sur le webhook Discord dédié, mais cette fonction
+    ne lève jamais d'exception : une erreur ici ne doit arrêter ni ce script, ni
+    les autres bots qui tournent en parallèle (voir main.py).
     """
     if not WINSTON_API_KEY:
-        log.error("Aucune clé API Winston AI détectée ! Vérifie ton fichier .env ou ta variable WINSTON_API_KEY.")
-        return 0.0
+        msg = "Aucune clé API Winston AI détectée (variable WINSTON_API_KEY absente ou vide)."
+        log.error(msg)
+        send_discord_embed(
+            title="⚠️ Erreur API Winston AI",
+            description=f"**{page_title}**\n{msg}\nL'image n'a pas pu être analysée.",
+            color=EMBED_COLOR_ERROR,
+        )
+        return None
 
     headers = {
         "Authorization": f"Bearer {WINSTON_API_KEY}",
@@ -128,13 +140,38 @@ def check_image_with_winston(image_url: str) -> float:
 
     except requests.exceptions.HTTPError as e:
         if response.status_code == 401:
-            log.error("Erreur 401 (Non autorisé) : clé API Winston AI invalide ou expirée.")
+            detail = "Erreur 401 (Non autorisé) : clé API Winston AI invalide ou expirée."
         else:
-            log.error("Erreur HTTP API Winston AI (%s) : %s", response.status_code, e)
-        return 0.0
+            detail = f"Erreur HTTP API Winston AI ({response.status_code}) : {e}"
+        log.error(detail)
+        send_discord_embed(
+            title="⚠️ Erreur API Winston AI",
+            description=f"**{page_title}**\n{detail}\nL'image n'a pas pu être analysée.",
+            color=EMBED_COLOR_ERROR,
+        )
+        return None
+
     except requests.exceptions.RequestException as e:
-        log.error("Erreur lors de la requête API Winston AI : %s", e)
-        return 0.0
+        detail = f"Erreur réseau/timeout lors de la requête à l'API Winston AI : {e}"
+        log.error(detail)
+        send_discord_embed(
+            title="⚠️ Erreur API Winston AI",
+            description=f"**{page_title}**\n{detail}\nL'image n'a pas pu être analysée.",
+            color=EMBED_COLOR_ERROR,
+        )
+        return None
+
+    except Exception as e:
+        # Filet de sécurité : réponse JSON invalide, clé 'score' inattendue, etc.
+        # On ne veut JAMAIS qu'une surprise ici fasse planter le script.
+        detail = f"Réponse inattendue de l'API Winston AI : {e}"
+        log.error(detail)
+        send_discord_embed(
+            title="⚠️ Erreur API Winston AI",
+            description=f"**{page_title}**\n{detail}\nL'image n'a pas pu être analysée.",
+            color=EMBED_COLOR_ERROR,
+        )
+        return None
 
 
 def process_file_page(site: pywikibot.Site, page_title: str, dry_run: bool = False):
@@ -163,7 +200,15 @@ def process_file_page(site: pywikibot.Site, page_title: str, dry_run: bool = Fal
         image_url = file_page.get_file_url()
         log.info("Analyse de %s (URL : %s)...", page_title, image_url)
 
-        score = check_image_with_winston(image_url)
+        score = check_image_with_winston(image_url, page_title=page_title)
+
+        if score is None:
+            # L'erreur a déjà été loguée et envoyée sur le webhook Discord par
+            # check_image_with_winston. On ne va pas plus loin pour CE fichier,
+            # mais ça ne doit pas empêcher le bot de continuer sur les suivants.
+            log.warning("Analyse de %s impossible (erreur API), on passe au suivant.", page_title)
+            return
+
         log.info("Score IA calculé pour %s : %.2f %%", page_title, score)
 
         page_url = file_page.full_url()
